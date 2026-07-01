@@ -4,9 +4,13 @@
 確保後面餵給 Gemini 的是可查證的原始資訊，避免 LLM 憑空生成數字。
 任何一個來源抓取失敗都不應讓整支程式掛掉，因此逐一包 try/except。
 """
+import logging
+from datetime import datetime, timezone
+
 import feedparser
 import requests
-from datetime import datetime, timedelta, timezone
+
+log = logging.getLogger("daily-news-agent.sources")
 
 TIMEOUT = 10
 UA_HEADERS = {"User-Agent": "Mozilla/5.0 (compatible; DailyNewsBot/1.0)"}
@@ -34,6 +38,15 @@ def fetch_rss_headlines(feeds: dict, limit_per_source: int) -> str:
     return "\n\n".join(blocks)
 
 
+def _trend_emoji(change: float) -> str:
+    """依漲跌方向回傳對應符號，交給程式碼決定，避免 LLM 判斷錯誤。"""
+    if change > 0:
+        return "📈"
+    if change < 0:
+        return "📉"
+    return "➡️"
+
+
 def _parse_stooq(symbol: str):
     """從 Stooq 抓 CSV，回傳 (今日收盤, 前一日收盤, 日期字串)。"""
     url = f"https://stooq.com/q/d/l/?s={symbol}&i=d"
@@ -41,8 +54,7 @@ def _parse_stooq(symbol: str):
     resp.raise_for_status()
     rows = [r.split(",") for r in resp.text.strip().splitlines() if r][1:]  # 去表頭
     if len(rows) < 2:
-        # Stooq 對雲端主機（如 Oracle/AWS）的 IP 有時會回傳空資料或錯誤頁面擋爬蟲，
-        # 這裡直接拋例外，讓上層改試 Yahoo Finance。
+        # Stooq 對雲端主機（如 Oracle/AWS）的 IP 有時會回傳空資料擋爬蟲，改試 Yahoo。
         raise ValueError("回傳資料筆數不足，可能被判定為機器人流量而擋下")
     date_today, close_today = rows[-1][0], float(rows[-1][4])
     close_prev = float(rows[-2][4])
@@ -68,7 +80,7 @@ def _parse_yahoo(symbol: str):
 
 
 def _fetch_index(name: str, symbols: dict) -> str:
-    """依序嘗試 Stooq -> Yahoo，任一來源成功就回傳，兩者都失敗才回報抓取失敗。"""
+    """依序嘗試 Stooq -> Yahoo，任一來源成功就回傳（含漲跌符號），兩者都失敗才回報抓取失敗。"""
     attempts = [("Stooq", _parse_stooq, symbols.get("stooq")),
                 ("Yahoo", _parse_yahoo, symbols.get("yahoo"))]
     errors = []
@@ -79,7 +91,11 @@ def _fetch_index(name: str, symbols: dict) -> str:
             close_today, close_prev, date_today = parse_fn(symbol)
             change = close_today - close_prev
             pct = change / close_prev * 100 if close_prev else 0
-            return f"{name}：{close_today:,.2f}（{change:+.2f}，{pct:+.2f}%）[{date_today}，來源:{source_name}]"
+            emoji = _trend_emoji(change)
+            return (
+                f"{emoji} {name}：{close_today:,.2f}"
+                f"（{change:+.2f}，{pct:+.2f}%）[{date_today}，來源:{source_name}]"
+            )
         except Exception as e:
             errors.append(f"{source_name}失敗({e})")
     return f"{name}：抓取失敗（{'；'.join(errors) if errors else '未設定任何來源代碼'}）"
@@ -90,37 +106,57 @@ def fetch_us_market_summary(indices: dict) -> str:
     return "\n".join(_fetch_index(name, symbols) for name, symbols in indices.items())
 
 
-def fetch_fred_upcoming_releases(api_key: str, releases: dict, days_ahead: int) -> str:
+def fetch_fred_todays_releases(api_key: str, releases: dict) -> str:
     """
-    查詢 FRED 指定幾個經濟數據，未來 N 天內是否有公布排程。
-    需要免費申請 FRED API Key: https://fred.stlouisfed.org/docs/api/api_key.html
+    檢查「今天」是否有指定的經濟數據公布，若有才抓取最新數值與前一期比較。
+    回傳空字串代表今天沒有任何一項數據公布（或未設定金鑰），呼叫端應直接省略這個段落，
+    不要在推播中出現空段落。
+    releases 格式: {"顯示名稱": {"release_id": int, "series_id": str}}
     """
     if not api_key:
-        return "（未設定 FRED_API_KEY，略過經濟數據行事曆）"
+        log.warning("未設定 FRED_API_KEY，略過 Fed 經濟數據查詢")
+        return ""
 
-    today = datetime.now(timezone.utc).date()
-    end = today + timedelta(days=days_ahead)
-    lines = []
-    for name, release_id in releases.items():
-        url = (
-            "https://api.stlouisfed.org/fred/release/dates"
-            f"?release_id={release_id}"
-            f"&realtime_start={today.isoformat()}&realtime_end={end.isoformat()}"
-            f"&api_key={api_key}&file_type=json&include_release_dates_with_no_data=true"
-        )
+    today = datetime.now(timezone.utc).date().isoformat()
+    blocks = []
+    for name, meta in releases.items():
+        release_id = meta["release_id"]
+        series_id = meta["series_id"]
         try:
-            resp = requests.get(url, timeout=TIMEOUT)
+            date_url = (
+                "https://api.stlouisfed.org/fred/release/dates"
+                f"?release_id={release_id}&realtime_start={today}&realtime_end={today}"
+                f"&api_key={api_key}&file_type=json&include_release_dates_with_no_data=true"
+            )
+            resp = requests.get(date_url, timeout=TIMEOUT)
             resp.raise_for_status()
             dates = [d["date"] for d in resp.json().get("release_dates", [])]
-            if dates:
-                lines.append(f"- {name}：{', '.join(dates)}")
+            if today not in dates:
+                continue  # 今天沒有這項數據公布，跳過，不算錯誤
+
+            obs_url = (
+                "https://api.stlouisfed.org/fred/series/observations"
+                f"?series_id={series_id}&sort_order=desc&limit=2"
+                f"&api_key={api_key}&file_type=json"
+            )
+            obs_resp = requests.get(obs_url, timeout=TIMEOUT)
+            obs_resp.raise_for_status()
+            observations = obs_resp.json().get("observations", [])
+            valid_obs = [o for o in observations if o.get("value") not in (None, ".")]
+            if len(valid_obs) < 2:
+                blocks.append(f"- {name}：今日公布，但可比對的歷史資料筆數不足")
+                continue
+
+            latest, prev = valid_obs[0], valid_obs[1]
+            latest_val, prev_val = float(latest["value"]), float(prev["value"])
+            change = latest_val - prev_val
+            pct = change / prev_val * 100 if prev_val else 0
+            emoji = _trend_emoji(change)
+            blocks.append(
+                f"- {name}（資料期間 {latest['date']}）{emoji}：{latest_val:,.2f}"
+                f"（較上期 {change:+.2f}，{pct:+.2f}%）"
+            )
         except Exception as e:
-            lines.append(f"- {name}：查詢失敗（{e}）")
-    return "\n".join(lines) if lines else "（未來期間內查無排定公布的數據）"
+            blocks.append(f"- {name}：查詢失敗（{e}）")
 
-
-def fetch_fomc_reminder(meeting_dates: list) -> str:
-    """單純把手動維護的 FOMC 會議日期列出來，不做日期比對邏輯（保持簡單好維護）。"""
-    if not meeting_dates:
-        return "（尚未設定 FOMC 會議日期，請至 config.py 依官方行事曆填入）"
-    return "\n".join(f"- {d}" for d in meeting_dates)
+    return "\n".join(blocks)

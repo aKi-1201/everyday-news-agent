@@ -94,11 +94,17 @@ venv/bin/python3 main.py >> cron.log 2>&1
 ## 5. 自訂內容
 
 - 想加減新聞來源：改 `config.py` 的 `RSS_FEEDS`（任何提供 RSS 的媒體都可以加，注意各家版權聲明多半僅限個人非商業使用）
-- 想加減觀察的股市指數：改 `US_INDICES`，代碼可以到 [Stooq](https://stooq.com/q/) 查
+- 想加減觀察的股市指數：改 `US_INDICES`，代碼可以到 [Stooq](https://stooq.com/q/) 或 Yahoo Finance 查
 - 想調整早報的語氣/格式：改 `summarizer.py` 裡的 `SYSTEM_PROMPT`
-- FOMC 會議日期需要每年手動更新一次：改 `config.py` 的 `FOMC_MEETING_DATES`，資料來源 [Fed 官方行事曆](https://www.federalreserve.gov/monetarypolicy/fomccalendars.htm)
+- 想加減追蹤的經濟數據：改 `config.py` 的 `FRED_RELEASES`，需要同時填對 `release_id`（查詢頁面: https://fred.stlouisfed.org/releases）和該 release 對應的主要資料序列 `series_id`（在該序列頁面網址可以找到，例如 CPI 是 `CPIAUCSL`）
 
-## 6. 常見問題
+## 6. 推播行為說明（v2 更新）
+
+- **推播固定拆成 2~3 則訊息**：📈 美股隔夜、📰 新聞焦點（含編輯室摘要）、💰 Fed 經濟數據。第三則**只有當天真的有排定的經濟數據公布時才會出現**，平常日子只會收到 2 則。
+- **美股漲跌符號**是程式碼直接依漲跌方向算出來的（📈/📉/➡️），不是 Gemini 自己判斷，確保一定正確。
+- **Fed 數據段落的「利多利空」解讀有個限制**：FRED 只提供實際公布值，沒有市場預期／共識值，所以解讀只能基於「相對上一期的變化方向」（例如數字加速上升代表通膨升溫），不能做到「優於/低於市場預期」這種真正財經新聞常見的判斷。如果之後想做到這個，需要額外串接有共識預期資料的來源（通常是付費服務）。
+
+## 7. 常見問題
 
 **LINE 推播回傳 400/401 錯誤**
 通常是 Channel Access Token 過期或打錯、或是你還沒把該官方帳號加好友。長期權杖理論上不會過期，但如果你在 Console 重新發行過，舊的就會失效。

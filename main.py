@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """
 每日新聞早報 Agent - 主程式
-流程：抓取原始資料 -> 丟給 Gemini 整理 -> 用 LINE 推播給自己
+流程：抓取原始資料 -> 丟給 Gemini 整理成 2~3 段 -> 用 LINE 一次推播多則訊息
 用法：python3 main.py
 建議透過 cron 每天早上排程執行（見 README.md）。
 """
@@ -10,10 +10,9 @@ import sys
 from datetime import datetime
 
 import config
-from notifier import push_line_text
+from notifier import push_line_texts
 from sources import (
-    fetch_fomc_reminder,
-    fetch_fred_upcoming_releases,
+    fetch_fred_todays_releases,
     fetch_rss_headlines,
     fetch_us_market_summary,
 )
@@ -33,28 +32,26 @@ def collect_raw_data() -> str:
     log.info("抓取台灣新聞 RSS...")
     tw_news = fetch_rss_headlines(config.RSS_FEEDS, config.HEADLINES_PER_SOURCE)
 
-    log.info("查詢 FRED 經濟數據行事曆...")
-    fred_calendar = fetch_fred_upcoming_releases(
-        config.FRED_API_KEY, config.FRED_RELEASES, config.FRED_LOOKAHEAD_DAYS
-    )
-
-    fomc = fetch_fomc_reminder(config.FOMC_MEETING_DATES)
+    log.info("查詢今日 FRED 經濟數據是否有公布...")
+    fred_today = fetch_fred_todays_releases(config.FRED_API_KEY, config.FRED_RELEASES)
 
     today_str = datetime.now().strftime("%Y-%m-%d")
-    return f"""[資料日期] {today_str}
+    raw_data = f"""[資料日期] {today_str}
 
 [美股主要指數]
 {us_market}
 
 [台灣新聞標題]
 {tw_news}
-
-[未來 {config.FRED_LOOKAHEAD_DAYS} 天內經濟數據公布排程]
-{fred_calendar}
-
-[FOMC 會議日期]
-{fomc}
 """
+    # 只有今天真的有經濟數據公布時，才把這個區塊加進原始資料，
+    # 這樣 Gemini 看不到這個區塊，prompt 規則就會要求它不要生出第三段。
+    if fred_today.strip():
+        raw_data += f"\n[今日經濟數據公布]\n{fred_today}\n"
+    else:
+        log.info("今天沒有排定的經濟數據公布（或未設定 FRED_API_KEY），略過此段落")
+
+    return raw_data
 
 
 def main() -> int:
@@ -67,14 +64,15 @@ def main() -> int:
 
     try:
         log.info("呼叫 Gemini 進行摘要整理...")
-        summary = summarize_with_gemini(config.GEMINI_API_KEY, config.GEMINI_MODEL, raw_data)
+        sections = summarize_with_gemini(config.GEMINI_API_KEY, config.GEMINI_MODEL, raw_data)
+        log.info("Gemini 回傳 %d 個段落", len(sections))
     except Exception:
         log.exception("Gemini 摘要失敗")
         return 1
 
     try:
         log.info("推播至 LINE...")
-        push_line_text(config.LINE_CHANNEL_ACCESS_TOKEN, config.LINE_USER_ID, summary)
+        push_line_texts(config.LINE_CHANNEL_ACCESS_TOKEN, config.LINE_USER_ID, sections)
         log.info("推播完成")
     except Exception:
         log.exception("LINE 推播失敗")
