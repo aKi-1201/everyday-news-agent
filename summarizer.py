@@ -15,7 +15,7 @@ GEMINI_ENDPOINT = (
     "https://generativelanguage.googleapis.com/v1beta/models/{model}:generateContent"
 )
 REQUEST_TIMEOUT = 60  # 秒；Gemini 若開著思考模式偶爾會回應較慢，留寬一點
-MAX_RETRIES = 2
+MAX_RETRIES = 5
 RETRY_BACKOFF_SECONDS = 5
 
 SECTION_DELIMITER = "===SECTION==="
@@ -29,7 +29,7 @@ SYSTEM_PROMPT = f"""你是一位財經新聞編輯，請根據使用者提供的
    不要自己重新判斷或計算。
 
 3. 第二段【📰 新聞焦點】：
-   a. 開頭先寫一段 2-4 句的「編輯室報告」，根據下面提供的新聞資訊，統整今天整體情勢重點
+   a. 開頭先寫一段 3-5 句的「編輯室報告」，根據下面提供的新聞資訊，統整今天整體情勢重點
       （例如市場氛圍、值得留意的政治或國際事件），只能根據提供的標題內容做歸納，不能加入未提供的資訊或臆測。
    b. 原始資料中有些新聞來源是全站新聞（可能混入娛樂八卦、體育賽事、地方瑣事等），這類新聞請直接忽略，
       除非其重要性明顯極高（例如重大天災、國際衝突、對台灣有實質影響的事件），才視情況納入。
