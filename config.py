@@ -31,8 +31,9 @@ RSS_FEEDS = {
     "中央社-產經證券": "https://feeds.feedburner.com/rsscna/finance",
     "經濟日報": "https://money.udn.com/rssfeed/news",
     "關鍵評論網": "https://www.thenewslens.com/feed/feedly",
+    "科技新報": "https://technews.tw/feed/"
 }
-HEADLINES_PER_SOURCE = 7  # 每個新聞來源取幾則標題餵給 LLM（7 來源 x 7 則，讓編輯室摘要有足夠素材）
+HEADLINES_PER_SOURCE = 10  # 每個新聞來源取幾則標題餵給 LLM（8 來源 x 10 則，讓編輯室摘要有足夠素材）
 
 # ============ 美股觀察指數（同時設定 Stooq 與 Yahoo 代碼，其中一個抓不到就自動改用另一個） ============
 US_INDICES = {
