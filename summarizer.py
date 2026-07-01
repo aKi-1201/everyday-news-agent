@@ -14,7 +14,7 @@ log = logging.getLogger("daily-news-agent.summarizer")
 GEMINI_ENDPOINT = (
     "https://generativelanguage.googleapis.com/v1beta/models/{model}:generateContent"
 )
-REQUEST_TIMEOUT = 60  # 秒；Gemini 若開著思考模式偶爾會回應較慢，留寬一點
+REQUEST_TIMEOUT = 90  # 秒；Gemini 若開著思考模式偶爾會回應較慢，留寬一點
 MAX_RETRIES = 5
 RETRY_BACKOFF_SECONDS = 5
 
