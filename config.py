@@ -24,14 +24,14 @@ FRED_API_KEY = os.environ.get("FRED_API_KEY", "")  # 留空則自動略過 Fed �
 # 自由時報 RSS 清單: https://service.ltn.com.tw/RSS
 # 中央社 RSS 清單:   https://www.cna.com.tw/about/rss.aspx
 RSS_FEEDS = {
-    "自由時報-即時": "https://news.ltn.com.tw/rss/all.xml",
+    "自由時報-即時": "https://news.ltn.com.tw/rss/all.xml",  # 焦點 RSS (focus.xml) 已關閉，改回全站即時
     "中央社-政治": "https://feeds.feedburner.com/rsscna/politics",
     "中央社-國際": "https://feeds.feedburner.com/rsscna/intworld",
     "中央社-科技": "https://feeds.feedburner.com/rsscna/technology",
     "中央社-產經證券": "https://feeds.feedburner.com/rsscna/finance",
     "經濟日報": "https://money.udn.com/rssfeed/news",
     "關鍵評論網": "https://www.thenewslens.com/feed/feedly",
-    "科技新報": "https://technews.tw/feed/"
+    "TechNews 科技新報": "https://technews.tw/feed/",
 }
 HEADLINES_PER_SOURCE = 10  # 每個新聞來源取幾則標題餵給 LLM（8 來源 x 10 則，讓編輯室摘要有足夠素材）
 
@@ -40,10 +40,12 @@ US_INDICES = {
     "S&P 500": {"stooq": "^spx", "yahoo": "^GSPC"},
     "Nasdaq": {"stooq": "^ndq", "yahoo": "^IXIC"},
     "道瓊工業指數": {"stooq": "^dji", "yahoo": "^DJI"},
-    "VIX 恐慌指數": {"stooq": "^vix", "yahoo": "^VIX"},
+    "費城半導體指數": {"stooq": "^sox", "yahoo": "^SOX"},  # Yahoo代碼已確認；Stooq代碼若失效會自動改用Yahoo
 }
 
-# ============ Fed / 美國經濟數據（FRED release_id + 對應資料序列 series_id） ============
+# ============ 美股休市判斷 ============
+# 已改用 pandas_market_calendars 套件自動判斷（見 sources.py 的 is_us_market_likely_closed），
+# 內建 NYSE 官方假日規則且會自動處理浮動假日，不需要在這裡手動維護清單了。
 # 完整 release 列表: https://fred.stlouisfed.org/releases
 # 序列代碼可在該序列頁面網址找到，例如 https://fred.stlouisfed.org/series/CPIAUCSL
 FRED_RELEASES = {

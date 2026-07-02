@@ -125,16 +125,22 @@ def fetch_us_market_summary(indices: dict) -> str:
 
 def fetch_fred_todays_releases(api_key: str, releases: dict) -> str:
     """
-    檢查「今天」是否有指定的經濟數據公布，若有才抓取最新數值與前一期比較。
-    回傳空字串代表今天沒有任何一項數據公布（或未設定金鑰），呼叫端應直接省略這個段落，
+    檢查「應回報的那個美東公布日」是否有指定的經濟數據公布，若有才抓取最新數值與前一期比較。
+    回傳空字串代表沒有任何一項數據公布（或未設定金鑰），呼叫端應直接省略這個段落，
     不要在推播中出現空段落。
     releases 格式: {"顯示名稱": {"release_id": int, "series_id": str}}
+
+    注意：這裡刻意不用「執行當下的 UTC 日期」來判斷，是因為台灣是 UTC+8，
+    台灣時間清晨 0~8 點執行時，UTC 日期其實還停留在前一天，會誤判成「還沒公布」。
+    改用台灣日期往前推一天（跟美股段落 is_us_market_likely_closed 用同一套邏輯），
+    這樣不管排程幾點執行，判斷結果都一致，不會因為執行時間卡在時區邊界而時有時無。
     """
     if not api_key:
         log.warning("未設定 FRED_API_KEY，略過 Fed 經濟數據查詢")
         return ""
 
-    today = datetime.now(timezone.utc).date().isoformat()
+    taiwan_today = datetime.now(TAIWAN_TZ).date()
+    target_date = (taiwan_today - timedelta(days=1)).isoformat()
     blocks = []
     for name, meta in releases.items():
         release_id = meta["release_id"]
@@ -142,14 +148,14 @@ def fetch_fred_todays_releases(api_key: str, releases: dict) -> str:
         try:
             date_url = (
                 "https://api.stlouisfed.org/fred/release/dates"
-                f"?release_id={release_id}&realtime_start={today}&realtime_end={today}"
+                f"?release_id={release_id}&realtime_start={target_date}&realtime_end={target_date}"
                 f"&api_key={api_key}&file_type=json&include_release_dates_with_no_data=true"
             )
             resp = requests.get(date_url, timeout=TIMEOUT)
             resp.raise_for_status()
             dates = [d["date"] for d in resp.json().get("release_dates", [])]
-            if today not in dates:
-                continue  # 今天沒有這項數據公布，跳過，不算錯誤
+            if target_date not in dates:
+                continue  # 目標日期沒有這項數據公布，跳過，不算錯誤
 
             obs_url = (
                 "https://api.stlouisfed.org/fred/series/observations"
