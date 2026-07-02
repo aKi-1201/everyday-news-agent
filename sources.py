@@ -5,15 +5,32 @@
 任何一個來源抓取失敗都不應讓整支程式掛掉，因此逐一包 try/except。
 """
 import logging
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 
 import feedparser
+import pandas_market_calendars as mcal
 import requests
 
 log = logging.getLogger("daily-news-agent.sources")
 
 TIMEOUT = 10
 UA_HEADERS = {"User-Agent": "Mozilla/5.0 (compatible; DailyNewsBot/1.0)"}
+TAIWAN_TZ = timezone(timedelta(hours=8))
+_NYSE_CALENDAR = mcal.get_calendar("NYSE")  # 只需初始化一次，內建假日規則不需要網路查詢
+
+
+def is_us_market_likely_closed() -> bool:
+    """
+    判斷「今天早上台灣時間要回報的那個美股交易日」是否為非交易日（週末或假日）。
+    做法：台灣日期往前推一天，近似對應到美東交易日（美股收盤結果約在台灣清晨
+    4-5 點才會出來），再用 pandas_market_calendars 內建的 NYSE 官方行事曆規則
+    （含每年浮動假日如耶穌受難日）判斷該日是否為交易日，完全離線計算、不需要
+    額外 API 或每年手動維護假日清單。
+    """
+    taiwan_today = datetime.now(TAIWAN_TZ).date()
+    session_date = taiwan_today - timedelta(days=1)
+    valid_days = _NYSE_CALENDAR.valid_days(start_date=session_date, end_date=session_date)
+    return len(valid_days) == 0
 
 
 def fetch_rss_headlines(feeds: dict, limit_per_source: int) -> str:

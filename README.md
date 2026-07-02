@@ -97,6 +97,7 @@ venv/bin/python3 main.py >> cron.log 2>&1
 - 想加減觀察的股市指數：改 `US_INDICES`，代碼可以到 [Stooq](https://stooq.com/q/) 或 Yahoo Finance 查
 - 想調整早報的語氣/格式：改 `summarizer.py` 裡的 `SYSTEM_PROMPT`
 - 想加減追蹤的經濟數據：改 `config.py` 的 `FRED_RELEASES`，需要同時填對 `release_id`（查詢頁面: https://fred.stlouisfed.org/releases）和該 release 對應的主要資料序列 `series_id`（在該序列頁面網址可以找到，例如 CPI 是 `CPIAUCSL`）
+- **美股休市判斷已全自動化**：`sources.py` 的 `is_us_market_likely_closed()` 改用 [pandas_market_calendars](https://github.com/rsheftel/pandas_market_calendars) 套件，內建 NYSE 官方行事曆規則（含耶穌受難日這種要套復活節公式計算的浮動假日），完全離線計算、不需要 API Key，也不用像之前那樣每年手動維護假日清單。
 
 ## 6. 推播行為說明（v2 更新）
 
