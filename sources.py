@@ -21,15 +21,27 @@ _NYSE_CALENDAR = mcal.get_calendar("NYSE")  # 只需初始化一次，內建假�
 
 def is_us_market_likely_closed() -> bool:
     """
-    判斷「今天早上台灣時間要回報的那個美股交易日」是否為非交易日（週末或假日）。
-    做法：台灣日期往前推一天，近似對應到美東交易日（美股收盤結果約在台灣清晨
-    4-5 點才會出來），再用 pandas_market_calendars 內建的 NYSE 官方行事曆規則
-    （含每年浮動假日如耶穌受難日）判斷該日是否為交易日，完全離線計算、不需要
-    額外 API 或每年手動維護假日清單。
+    判斷「這次推播要不要顯示美股隔夜段落」，回傳 True 代表要跳過該段落。
+    規則（皆以台灣時間為準）：
+    - 週日：一律跳過，不管週五狀況。
+    - 週六：顯示週五收盤；若週五當天休市，則跳過。
+    - 週一：顯示週五收盤（週末沒有新交易日，直接定位到週五，不會再往前找週四）；
+      若週五當天休市，則跳過。
+    - 其他日子（週二~週五）：顯示前一天收盤；若前一天休市（例如週間國定假日），則跳過。
+
+    註：實際抓到的收盤數字一律是 Stooq/Yahoo 當下回傳的「最新」收盤價，這裡只負責判斷
+    要不要顯示這個段落，不需要額外指定要抓哪一天的資料。
     """
     taiwan_today = datetime.now(TAIWAN_TZ).date()
-    session_date = taiwan_today - timedelta(days=1)
-    valid_days = _NYSE_CALENDAR.valid_days(start_date=session_date, end_date=session_date)
+
+    if taiwan_today.weekday() == 6:  # 週日，一律跳過
+        return True
+
+    candidate = taiwan_today - timedelta(days=1)
+    if candidate.weekday() == 6:  # 前一天是週日 -> 代表今天是週一，改定位到週五
+        candidate = candidate - timedelta(days=2)
+
+    valid_days = _NYSE_CALENDAR.valid_days(start_date=candidate, end_date=candidate)
     return len(valid_days) == 0
 
 
